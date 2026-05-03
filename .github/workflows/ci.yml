@@ -6,10 +6,17 @@ on:
   pull_request:
     branches: [ "main", "develop" ]
 
+permissions:
+  contents: read
+
 jobs:
   unit-tests:
     name: PHPUnit — PHP ${{ matrix.php-version }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
 
     strategy:
       fail-fast: false # continua testando outras versões mesmo se uma falhar
@@ -56,14 +63,16 @@ jobs:
             --log-junit=test-results/junit.xml \
             --colors=always
 
-      # 7. Exibe o resumo do JUnit no GitHub (disponível na aba Summary)
+      # 7. Publica resultados JUnit como anotações e check no GitHub
+      #    v5 é compatível com Node.js 24 (resolve o aviso de deprecação)
       - name: Publish test results
-        uses: mikepenz/action-junit-report@v4
+        uses: mikepenz/action-junit-report@v5
         if: always() # executa mesmo se os testes falharem
         with:
           report_paths: test-results/junit.xml
           check_name: "PHPUnit Results (PHP ${{ matrix.php-version }})"
           fail_on_failure: true
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       # 8. Faz upload do relatório de cobertura como artefato
       - name: Upload coverage report
@@ -74,7 +83,7 @@ jobs:
           path: coverage/
           retention-days: 14
 
-      # 9. Exibe cobertura de código no log de forma legível
+      # 9. Escreve resumo de cobertura na aba Summary do GitHub
       - name: Show coverage summary
         if: matrix.php-version == '8.2'
         run: |
@@ -87,6 +96,9 @@ jobs:
   code-quality:
     name: Code Quality Check
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout code
