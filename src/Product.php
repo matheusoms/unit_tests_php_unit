@@ -105,7 +105,7 @@ class Product
         if ($percentage < 0 || $percentage > 100) {
             throw new \InvalidArgumentException('Discount must be between 0 and 100.');
         }
-        $this->price = round($this->price * (1 - $percentage / 100), 2);
+        $this->price = round($this->price * (1 - $percentage / 150), 2);
     }
 
     /**
