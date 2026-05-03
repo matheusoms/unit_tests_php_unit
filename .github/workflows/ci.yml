@@ -1,0 +1,117 @@
+name: CI — PHP Unit Tests (Quadrante Q1)
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main", "develop" ]
+
+jobs:
+  unit-tests:
+    name: PHPUnit — PHP ${{ matrix.php-version }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false # continua testando outras versões mesmo se uma falhar
+      matrix:
+        php-version: [ "8.1", "8.2", "8.3" ]
+
+    steps:
+      # 1. Checkout do repositório
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Configura o PHP com a extensão Xdebug (necessária para coverage)
+      - name: Setup PHP ${{ matrix.php-version }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-version }}
+          extensions: mbstring, xml
+          coverage: xdebug
+          tools: composer:v2
+
+      # 3. Cache das dependências do Composer para acelerar builds
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: composer-${{ matrix.php-version }}-${{ hashFiles('composer.lock') }}
+          restore-keys: |
+            composer-${{ matrix.php-version }}-
+
+      # 4. Instala dependências
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      # 5. Cria diretórios de saída
+      - name: Create output directories
+        run: mkdir -p test-results coverage/html
+
+      # 6. Executa os testes com cobertura de código
+      - name: Run PHPUnit with coverage
+        run: |
+          vendor/bin/phpunit \
+            --coverage-text \
+            --coverage-clover=coverage/clover.xml \
+            --log-junit=test-results/junit.xml \
+            --colors=always
+
+      # 7. Exibe o resumo do JUnit no GitHub (disponível na aba Summary)
+      - name: Publish test results
+        uses: mikepenz/action-junit-report@v4
+        if: always() # executa mesmo se os testes falharem
+        with:
+          report_paths: test-results/junit.xml
+          check_name: "PHPUnit Results (PHP ${{ matrix.php-version }})"
+          fail_on_failure: true
+
+      # 8. Faz upload do relatório de cobertura como artefato
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: matrix.php-version == '8.2' # artefato apenas para versão principal
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 14
+
+      # 9. Exibe cobertura de código no log de forma legível
+      - name: Show coverage summary
+        if: matrix.php-version == '8.2'
+        run: |
+          echo "## Coverage Summary" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          vendor/bin/phpunit --coverage-text --colors=never 2>&1 | \
+            grep -A 30 "Code Coverage Report" >> $GITHUB_STEP_SUMMARY || true
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+  code-quality:
+    name: Code Quality Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      # Verifica se não há erros de sintaxe nos arquivos PHP
+      - name: PHP Syntax Check (Lint)
+        run: |
+          echo "Checking PHP syntax..."
+          find src tests -name "*.php" -print0 | \
+            xargs -0 -n1 php -l | \
+            grep -v "No syntax errors" && exit 1 || \
+            echo "All files are syntax error free."
+
+      # Reporta no Summary do GitHub
+      - name: Write Quality Summary
+        run: |
+          echo "## Code Quality" >> $GITHUB_STEP_SUMMARY
+          echo "✅ PHP Lint passed — no syntax errors found." >> $GITHUB_STEP_SUMMARY
